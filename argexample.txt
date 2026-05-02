@@ -1,0 +1,1 @@
+python train_franka.py --timesteps 3000000

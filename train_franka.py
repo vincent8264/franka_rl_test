@@ -143,23 +143,23 @@ def evaluate_trained_model(model_path, num_episodes=5, render_mode="human"):
 
 
 if __name__ == "__main__":
-    # import argparse
+    import argparse
     
-    # parser = argparse.ArgumentParser(description="Train Franka robot with RL")
-    # parser.add_argument("--timesteps", type=int, default=50000, help="Total training timesteps")
-    # parser.add_argument("--eval", action="store_true", help="Only evaluate existing model")
-    # parser.add_argument("--model-path", type=str, default="./models/franka_final_model", help="Path to model for evaluation")
-    # parser.add_argument("--render", action="store_true", help="Enable rendering during training")
-    # parser.add_argument("--use-eval-callback", action="store_true", help="Use evaluation callback during training (disable if it hangs)")
+    parser = argparse.ArgumentParser(description="Train Franka robot with RL")
+    parser.add_argument("--timesteps", type=int, default=50000, help="Total training timesteps")
+    parser.add_argument("--eval", action="store_true", help="Only evaluate existing model")
+    parser.add_argument("--model-path", type=str, default="./models/franka_final_model", help="Path to model for evaluation")
+    parser.add_argument("--render", action="store_true", help="Enable rendering during training")
+    parser.add_argument("--use-eval-callback", action="store_true", help="Use evaluation callback during training (disable if it hangs)")
     
-    # args = parser.parse_args()
-    args = type('Args', (), {
-        "timesteps": 3000000, #2000000
-        "eval": True,
-        "model_path": "./models/franka_final_model.zip",
-        "render": False,
-        "use_eval_callback": False
-    })()
+    args = parser.parse_args()
+    # args = type('Args', (), {
+    #     "timesteps": 3000000, #2000000
+    #     "eval": True,
+    #     "model_path": "./models/franka_final_model.zip",
+    #     "render": False,
+    #     "use_eval_callback": False
+    # })()
     
     if args.eval:
         # Evaluate existing model
