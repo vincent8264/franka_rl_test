@@ -7,13 +7,14 @@ import os
 
 def train_franka_robot(
     total_timesteps=100000,
-    learning_rate=3e-4,
+    learning_rate=3e-3,
     n_steps=2048,
     batch_size=256,
     n_epochs=4,
     render_mode=None,
     save_dir="./models",
-    use_eval_callback=False
+    use_eval_callback=False,
+    resume_from=None
 ):
     """
     Train a Franka robot using PPO algorithm.
@@ -26,6 +27,7 @@ def train_franka_robot(
         render_mode: Render mode ("human" or None)
         save_dir: Directory to save models
         use_eval_callback: Whether to use evaluation callback (disable if it hangs)
+        resume_from: Path to existing model checkpoint to resume training from
     """
     
     # Create save directory if it doesn't exist
@@ -36,7 +38,7 @@ def train_franka_robot(
     # Create vectorized environment with render_mode=None for training (much faster)
     env = make_vec_env(
         lambda: FrankaGymEnv(render_mode=render_mode),
-        n_envs=8 if render_mode is None else 1, 
+        n_envs=16 if render_mode is None else 1, 
     )
     
     # Create evaluation environment only if using eval callback
@@ -44,18 +46,23 @@ def train_franka_robot(
     
     print("Setting up PPO agent...")
     
-    # Initialize PPO agent
-    model = PPO(
-        policy="MlpPolicy",
-        env=env,
-        learning_rate=learning_rate,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs,
-        verbose=1,
-        device="cuda",
-        tensorboard_log="./tensorboard_logs",
-    )
+    if resume_from:
+        print(f"Loading model from checkpoint: {resume_from}")
+        model = PPO.load(resume_from, env=env)
+        print(f"Resumed training from {model.num_timesteps} timesteps")
+    else:
+        # Initialize PPO agent
+        model = PPO(
+            policy="MlpPolicy",
+            env=env,
+            learning_rate=learning_rate,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+            verbose=1,
+            device="cuda",
+            tensorboard_log="./tensorboard_logs",
+        )
     
     # Set up callbacks
     callbacks = []
@@ -145,21 +152,23 @@ def evaluate_trained_model(model_path, num_episodes=5, render_mode="human"):
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="Train Franka robot with RL")
-    parser.add_argument("--timesteps", type=int, default=50000, help="Total training timesteps")
-    parser.add_argument("--eval", action="store_true", help="Only evaluate existing model")
-    parser.add_argument("--model-path", type=str, default="./models/franka_final_model", help="Path to model for evaluation")
-    parser.add_argument("--render", action="store_true", help="Enable rendering during training")
-    parser.add_argument("--use-eval-callback", action="store_true", help="Use evaluation callback during training (disable if it hangs)")
+    # parser = argparse.ArgumentParser(description="Train Franka robot with RL")
+    # parser.add_argument("--timesteps", type=int, default=50000, help="Total training timesteps")
+    # parser.add_argument("--eval", action="store_true", help="Only evaluate existing model")
+    # parser.add_argument("--model-path", type=str, default="./models/franka_final_model", help="Path to model for evaluation")
+    # parser.add_argument("--render", action="store_true", help="Enable rendering during training")
+    # parser.add_argument("--use-eval-callback", action="store_true", help="Use evaluation callback during training (disable if it hangs)")
+    # parser.add_argument("--resume-from", type=str, help="Path to checkpoint model to resume training from")
     
-    args = parser.parse_args()
-    # args = type('Args', (), {
-    #     "timesteps": 3000000, #2000000
-    #     "eval": True,
-    #     "model_path": "./models/franka_final_model.zip",
-    #     "render": False,
-    #     "use_eval_callback": False
-    # })()
+    # args = parser.parse_args()
+    args = type('Args', (), {
+        "timesteps": 5000000, #2000000
+        "eval": True,
+        "model_path": "./models/franka_final_model.zip",
+        "render": False,
+        "use_eval_callback": False,
+        "resume_from": None,
+    })()
     
     if args.eval:
         # Evaluate existing model
@@ -170,6 +179,7 @@ if __name__ == "__main__":
             total_timesteps=args.timesteps,
             render_mode="human" if args.render else None,
             use_eval_callback=args.use_eval_callback,
+            resume_from=args.resume_from,
         )
         
         # Evaluate the trained model

@@ -139,7 +139,7 @@ class FrankaEnv:
                 reward += cube_pos[2] * 100.0  # Table height is 0.32m
             
             # 3. Carrying Reward: Reward getting closer to the target while holding the cube
-            reward += (self.starting_target_dist - target_dist) * 200.0
+            reward += (self.starting_target_dist - target_dist) * 300.0
             
         else:
             # Reaching reward if not grabbing
@@ -223,38 +223,3 @@ class FrankaEnv:
     def close(self):
         if self.viewer is not None:
             self.viewer.close()
-
-    def reward_old(self):
-        gripper_pos = self.data.site_xpos[self.gripper_site_id]
-        cube_pos = self.data.xpos[self.cube1_body_id]
-        target_pos = self.data.xpos[self.target_body_id]
-
-        reach_dist = np.linalg.norm(gripper_pos - cube_pos)
-        target_dist = np.linalg.norm(cube_pos - target_pos)
-
-        reward = 0.0
-        if self._is_grabbing():
-            reward += 2.0  # Reward the act of holding the object
-          
-            # 2. Lift Gradient: Only active once we have a solid grip
-            # This encourages the robot to increase the cube's Z-height
-            z_height_reward = (cube_pos[2] - 0.32) * 10.0 # 0.3 is table height
-            reward += max(0, z_height_reward)
-          
-            # 3. Carrying Reward
-            # Once lifted, penalize distance to the target even more
-            if cube_pos[2] > 0.32:
-                #print(f"Cube lifted! Height: {cube_pos[2]:.4f}, Target Dist: {target_dist:.4f}")
-                reward += 5.0
-                reward += (self.starting_target_dist - target_dist) * 50.0
-
-        else:
-            # Reaching reward if not grabbing
-            reward -= reach_dist 
-         # 4. SUCCESS TERMINAL REWARD ---
-        target_proximity_reward = 1.0 / (1.0 + target_dist**2)
-        reward += target_proximity_reward
-        if target_dist < 0.05:
-            reward += 100.0
-
-        return reward
