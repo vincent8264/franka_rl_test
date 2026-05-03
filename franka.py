@@ -12,6 +12,7 @@ class FrankaEnv:
         self.arm_dof = 7
         self.gripper_site_id = self.model.site('hand_tcp').id
         self.cube1_body_id = self.model.body("cube1").id
+        self.table_id = self.model.body("table").id
         self.target_body_id = self.model.body("target").id
         self.initial_angles = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.57, 0.785])
         self.starting_target_dist = 0.0
@@ -131,31 +132,31 @@ class FrankaEnv:
         target_dist = np.linalg.norm(cube_pos - target_pos)
 
         reward = 0.0
+        
+        # 1. Base Time Penalty (Optional but recommended)
+        reward -= 0.01  # Encourages the robot to act quickly
+        reward -= (target_dist * 20.0)
         if self._is_grabbing():
-            reward += 2.0  # Reward the act of holding the object
             
-            # 2. Lift 
             if not self._is_cube_touching_table():
-                reward += cube_pos[2] * 100.0  # Table height is 0.32m
+                reward += 5.0  # Flat bonus, NOT multiplied by height!
             
-            # 3. Carrying Reward: Reward getting closer to the target while holding the cube
-            reward += (self.starting_target_dist - target_dist) * 300.0
+            # 2. The Carrying Phase: Penalize distance to target
+            # Instead of rewarding it for being closer than the start, 
+            # we penalize it for how far it currently is. It will want to minimize this.
             
         else:
-            # Reaching reward if not grabbing
-            reward -= reach_dist
+            # 3. The Reaching Phase: Penalize distance to the cube
+            reward -= (reach_dist * 30.0) + 10.0
 
         if self._collision_check():
-            reward -= 50.0  # Penalize collisions harshly
+            reward -= 50.0  # Harsh penalty for getting stuck
 
         # 4. SUCCESS TERMINAL REWARD ---
-        target_proximity_reward = 1.0 / (1.0 + target_dist**2)
-        reward += target_proximity_reward
-        
-        # Adjust threshold slightly to account for the Z-height difference 
-        # of the cube resting on top of the target box.
+        # The ultimate goal. Make sure this is high enough to justify the penalties 
+        # incurred along the way.
         if target_dist < 0.05:
-            reward += 1000.0 
+            reward += 10000.0 
         
         return reward
 
@@ -172,46 +173,51 @@ class FrankaEnv:
         cube_pos = self.data.xpos[self.cube1_body_id]
         
         if np.linalg.norm(gripper_pos - cube_pos) < 0.02:
-            if self.data.ctrl[7] < 0.01 and self.data.qpos[7] > 0.01:
-                #print(f"Gripper is grabbing, Gripper dist to cube: {np.linalg.norm(gripper_pos - cube_pos):.4f}")
-                return True
+            if self.data.ctrl[7] < 127:
+                epsilon = 0.001
+                if 0.02 - epsilon < self.data.qpos[7] < 0.02 + epsilon:
+                    print("Gripper is grabbed onto the cube!")
+                    return True
             
         return False
     
     def _collision_check(self):
-        gripper_pos = self.data.site_xpos[self.gripper_site_id]
-        tracking_error = np.linalg.norm(self.target_pos - gripper_pos)
+        allowed = {
+            "left_finger": ["cube1", "cube2","cube3","right_finger"],
+            "right_finger": ["cube1", "cube2","cube3","left_finger"],
+        }
+        for i in range(self.data.ncon):
+            contact = self.data.contact[i]
+            body1_name = self.model.body(self.model.geom_bodyid[contact.geom1]).name
+            body2_name = self.model.body(self.model.geom_bodyid[contact.geom2]).name
 
-        if tracking_error > 0.04: 
-            #print(f"Arm stuck! Error: {tracking_error:.3f}")
-            return True
-            
+            if body1_name in allowed and body2_name not in allowed[body1_name]:
+                return True
+            if body2_name in allowed and body1_name not in allowed[body2_name]:
+                return True
         return False
     
     def _is_cube_touching_table(self):
         for i in range(self.data.ncon):
             contact = self.data.contact[i]
             
-            geom1_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom1)
-            geom2_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom2)
-            
-            if not geom1_name or not geom2_name:
-                continue
-                
-            # Check if this specific contact pair is cube1 and the table
-            is_cube = "cube1" in geom1_name or "cube1" in geom2_name
-            is_table = "table" in geom1_name or "table" in geom2_name
-            
-            if is_cube and is_table:
+            body1_name = self.model.body(self.model.geom_bodyid[contact.geom1]).name
+            body2_name = self.model.body(self.model.geom_bodyid[contact.geom2]).name
+
+            if (body1_name == "cube1" and body2_name == "table") or (body2_name == "cube1" and body1_name == "table"):
                 return True
         
-        epsilon = 0.001
+        epsilon = 0.01
         if 0.32 - epsilon < self.data.xpos[self.cube1_body_id][2] < 0.32 + epsilon:
-            #if the cube is at table height and without vertical velocity, we can assume it's resting on the table even if contacts are missed
-            if abs(self.data.cvel[self.cube1_body_id][5]) < 0.01:
+            #if the cube is at table height, and xy are close to the table center, we can consider it touching the table even if no contact is detected (to handle edge cases)
+            table_x = self.data.xpos[self.table_id][0]
+            table_y = self.data.xpos[self.table_id][1]
+            cube_x = self.data.xpos[self.cube1_body_id][0]
+            cube_y = self.data.xpos[self.cube1_body_id][1]
+            if np.linalg.norm([cube_x - table_x, cube_y - table_y]) < 0.2:
                 return True
 
-        #print(f"Cube has lifted off the table!, cube height: {self.data.xpos[self.cube1_body_id][2]:.3f}")
+        print(f"Cube has lifted off the table!, cube height: {self.data.xpos[self.cube1_body_id][2]:.3f}")
         return False
 
     def render(self):
