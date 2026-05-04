@@ -8,7 +8,9 @@ class FrankaEnv:
         # 1. Core Model Loading
         self.model = mujoco.MjModel.from_xml_path("./franka_emika_panda/scene.xml")
         self.data = mujoco.MjData(self.model)
-        
+        #self.cubes = ["cube1", "cube2", "cube3"]
+        self.cubes = ["cube1"] #only one cube for now, to simplify the task. We can add more cubes later if needed.
+
         self.arm_dof = 7
         self.gripper_site_id = self.model.site('hand_tcp').id
         self.cube1_body_id = self.model.body("cube1").id
@@ -36,7 +38,7 @@ class FrankaEnv:
         # Table center coordinates
         table_x, table_y, table_z = 0.4, 0.3, 0.32 
 
-        for cube_name in ["cube1", "cube2", "cube3"]:
+        for cube_name in self.cubes:
             joint_id = self.model.joint(f"{cube_name}_joint").qposadr[0]
             
             # 1. Randomize X and Y around the table center
@@ -87,6 +89,7 @@ class FrankaEnv:
         """
         # 1. Apply Actions
         dx, dy, dz, d_yaw, gripper = action
+        d_yaw = 0.0 #ignore yaw for now, to simplify the task. We can add it back later if needed.
         
         # Update target position
         self.target_pos += np.array([dx, dy, dz])
@@ -135,28 +138,24 @@ class FrankaEnv:
         
         # 1. Base Time Penalty (Optional but recommended)
         reward -= 0.01  # Encourages the robot to act quickly
-        reward -= (target_dist * 20.0)
-        if self._is_grabbing():
-            
-            if not self._is_cube_touching_table():
-                reward += 5.0  # Flat bonus, NOT multiplied by height!
-            
-            # 2. The Carrying Phase: Penalize distance to target
-            # Instead of rewarding it for being closer than the start, 
-            # we penalize it for how far it currently is. It will want to minimize this.
-            
-        else:
-            # 3. The Reaching Phase: Penalize distance to the cube
-            reward -= (reach_dist * 30.0) + 10.0
+
+        # 2. Grasping Reward
+        if not self._is_grabbing():
+            reward -= (reach_dist * 20.0) + 10.0
+
+        # 3. Airbrone Reward 
+        if not (self._is_grabbing() and not self._is_cube_touching_table()):
+            reward -= 10.0
+
+        # 4. Distance to Target Reward
+        reward -= (target_dist * 30.0)
 
         if self._collision_check():
-            reward -= 50.0  # Harsh penalty for getting stuck
+            reward -= 15.0  # Harsh penalty for getting stuck
 
-        # 4. SUCCESS TERMINAL REWARD ---
-        # The ultimate goal. Make sure this is high enough to justify the penalties 
-        # incurred along the way.
-        if target_dist < 0.05:
-            reward += 10000.0 
+        # Target Reached Bonus
+        if target_dist < 0.10:
+            reward += 1000.0 
         
         return reward
 
@@ -166,17 +165,20 @@ class FrankaEnv:
         
         target_dist = np.linalg.norm(cube_pos - target_pos)
 
-        return target_dist < 0.05
+        return target_dist < 0.10
 
     def _is_grabbing(self):
+        if self._collision_check():
+            return False
+        
         gripper_pos = self.data.site_xpos[self.gripper_site_id]
         cube_pos = self.data.xpos[self.cube1_body_id]
-        
+
         if np.linalg.norm(gripper_pos - cube_pos) < 0.02:
             if self.data.ctrl[7] < 127:
                 epsilon = 0.001
                 if 0.02 - epsilon < self.data.qpos[7] < 0.02 + epsilon:
-                    print("Gripper is grabbed onto the cube!")
+                    #print("Gripper is grabbed onto the cube!")
                     return True
             
         return False
@@ -217,7 +219,7 @@ class FrankaEnv:
             if np.linalg.norm([cube_x - table_x, cube_y - table_y]) < 0.2:
                 return True
 
-        print(f"Cube has lifted off the table!, cube height: {self.data.xpos[self.cube1_body_id][2]:.3f}")
+        #print(f"Cube has lifted off the table!, cube height: {self.data.xpos[self.cube1_body_id][2]:.3f}")
         return False
 
     def render(self):

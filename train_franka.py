@@ -7,7 +7,7 @@ import os
 
 def train_franka_robot(
     total_timesteps=100000,
-    learning_rate=3e-4,
+    learning_rate=1e-3,
     n_steps=2048,
     batch_size=256,
     render_mode=None,
@@ -148,7 +148,7 @@ def evaluate_trained_model(model_path, num_episodes=5, render_mode="human"):
 
 
 if __name__ == "__main__":
-    import argparse
+    #import argparse
     
     # parser = argparse.ArgumentParser(description="Train Franka robot with RL")
     # parser.add_argument("--timesteps", type=int, default=50000, help="Total training timesteps")
@@ -160,9 +160,9 @@ if __name__ == "__main__":
     
     # args = parser.parse_args()
     args = type('Args', (), {
-        "timesteps": 3000000, #2000000
+        "timesteps": 10000000, #2000000
         "eval": True,
-        "model_path": "./models/franka_final_model",
+        "model_path": "./models/franka_checkpoint_6400000_steps",
         "render": False,
         "use_eval_callback": False,
         "resume_from": None,
